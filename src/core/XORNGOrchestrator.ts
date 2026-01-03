@@ -9,7 +9,7 @@ import type {
 } from '../types/index.js';
 import { ProviderManager } from './ProviderManager.js';
 import { CopilotProvider } from '../providers/CopilotProvider.js';
-import { LocalOrchestrator } from './LocalOrchestrator.js';
+import { LocalOrchestrator, OrchestratorConfig } from './LocalOrchestrator.js';
 import type { SubAgentInfo } from '../ipc/types.js';
 
 /**
@@ -123,6 +123,8 @@ export class XORNGOrchestrator implements vscode.Disposable {
   private coreAgents: SubAgentInfo[] = [];
   private disposables: vscode.Disposable[] = [];
   private corePath: string = '';
+  private redisUrl: string = 'redis://localhost:6379';
+  private logLevel: string = 'info';
 
   constructor(providerManager: ProviderManager, corePath?: string) {
     this.providerManager = providerManager;
@@ -139,6 +141,20 @@ export class XORNGOrchestrator implements vscode.Disposable {
   }
 
   /**
+   * Set Redis URL for Core configuration
+   */
+  setRedisUrl(redisUrl: string): void {
+    this.redisUrl = redisUrl;
+  }
+
+  /**
+   * Set log level for Core
+   */
+  setLogLevel(logLevel: string): void {
+    this.logLevel = logLevel;
+  }
+
+  /**
    * Start the local Core process
    */
   async startCore(): Promise<boolean> {
@@ -151,7 +167,13 @@ export class XORNGOrchestrator implements vscode.Disposable {
       return true;
     }
 
-    this.localOrchestrator = new LocalOrchestrator(this.corePath);
+    const config: OrchestratorConfig = {
+      corePath: this.corePath,
+      redisUrl: this.redisUrl,
+      logLevel: this.logLevel,
+    };
+
+    this.localOrchestrator = new LocalOrchestrator(config);
     
     // Listen for Core events
     this.disposables.push(

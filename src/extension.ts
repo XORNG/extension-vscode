@@ -92,12 +92,19 @@ async function runAutoSetup(context: vscode.ExtensionContext): Promise<void> {
         },
         async (progress) => {
           progress.report({ message: 'Cloning repositories...' });
-          await setupManager.runSetup(progress);
+          const setupSuccess = await setupManager.runSetup(progress);
           
-          // Set Core path and optionally start it
+          if (!setupSuccess) {
+            vscode.window.showErrorMessage('XORNG: Setup failed. Check the Output panel for details.');
+            return;
+          }
+          
+          // Set Core path and configuration
           const corePath = setupManager.getCorePath();
           if (corePath) {
             orchestrator.setCorePath(corePath);
+            orchestrator.setRedisUrl(setupManager.getRedisUrl());
+            orchestrator.setLogLevel(config.get<string>('logging.level', 'info'));
             
             // Auto-start Core if enabled
             const autoStart = config.get<boolean>('core.autoStart', true);
@@ -116,6 +123,15 @@ async function runAutoSetup(context: vscode.ExtensionContext): Promise<void> {
       const corePath = setupManager.getCorePath();
       if (corePath) {
         orchestrator.setCorePath(corePath);
+        orchestrator.setRedisUrl(setupManager.getRedisUrl());
+        orchestrator.setLogLevel(config.get<string>('logging.level', 'info'));
+        
+        // Ensure Docker infrastructure is running
+        const infraReady = await setupManager.isInfrastructureReady();
+        if (!infraReady) {
+          console.log('Starting Docker infrastructure...');
+          await setupManager.startInfrastructure();
+        }
         
         // Update in background (pull latest changes)
         setupManager.runUpdate().catch(err => {
@@ -285,14 +301,35 @@ function registerCommands(context: vscode.ExtensionContext): void {
         return;
       }
 
-      orchestrator.setCorePath(corePath);
       const started = await vscode.window.withProgress(
         {
           location: vscode.ProgressLocation.Notification,
           title: 'XORNG: Starting Core...',
           cancellable: false,
         },
-        async () => orchestrator.startCore()
+        async (progress) => {
+          // Ensure Docker infrastructure is running first
+          const infraReady = await setupManager.isInfrastructureReady();
+          if (!infraReady) {
+            progress.report({ message: 'Starting infrastructure services...' });
+            try {
+              await setupManager.startInfrastructure();
+            } catch (error) {
+              const errorMsg = error instanceof Error ? error.message : String(error);
+              vscode.window.showErrorMessage(`Failed to start infrastructure: ${errorMsg}`);
+              return false;
+            }
+          }
+
+          // Configure and start Core
+          orchestrator.setCorePath(corePath);
+          orchestrator.setRedisUrl(setupManager.getRedisUrl());
+          const config = vscode.workspace.getConfiguration('xorng');
+          orchestrator.setLogLevel(config.get<string>('logging.level', 'info'));
+          
+          progress.report({ message: 'Starting XORNG Core...' });
+          return orchestrator.startCore();
+        }
       );
 
       if (started) {
@@ -395,6 +432,101 @@ function registerCommands(context: vscode.ExtensionContext): void {
     })
   );
 
+  // Start Docker infrastructure command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.startInfrastructure', async () => {
+      const result = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'XORNG: Starting infrastructure services...',
+          cancellable: false,
+        },
+        async (progress) => {
+          try {
+            progress.report({ message: 'Starting Docker containers (Redis)...' });
+            await setupManager.startInfrastructure();
+            return true;
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`XORNG: Failed to start infrastructure: ${errorMsg}`);
+            return false;
+          }
+        }
+      );
+
+      if (result) {
+        vscode.window.showInformationMessage('XORNG: Infrastructure services started');
+      }
+    })
+  );
+
+  // Stop Docker infrastructure command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.stopInfrastructure', async () => {
+      // First stop Core if running
+      if (orchestrator.isCoreRunning()) {
+        await orchestrator.stopCore();
+      }
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'XORNG: Stopping infrastructure services...',
+          cancellable: false,
+        },
+        async () => {
+          await setupManager.stopInfrastructure();
+        }
+      );
+
+      updateStatusBar();
+      vscode.window.showInformationMessage('XORNG: Infrastructure services stopped');
+    })
+  );
+
+  // Show infrastructure status command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.showInfrastructureStatus', async () => {
+      const status = await setupManager.getInfrastructureStatus();
+      const dockerManager = setupManager.getDockerManager();
+      
+      const items = status.map(service => ({
+        label: `$(${service.running ? 'check' : 'circle-slash'}) ${service.name}`,
+        description: service.running ? 'Running' : 'Stopped',
+        detail: service.ports?.join(', ') || '',
+      }));
+
+      const dockerAvailable = await dockerManager.isDockerAvailable();
+      const dockerRunning = await dockerManager.isDockerRunning();
+
+      if (!dockerAvailable) {
+        vscode.window.showWarningMessage('XORNG: Docker is not installed');
+        return;
+      }
+
+      if (!dockerRunning) {
+        const action = await vscode.window.showWarningMessage(
+          'XORNG: Docker daemon is not running',
+          'Retry',
+          'Cancel'
+        );
+        if (action === 'Retry') {
+          vscode.commands.executeCommand('xorng.showInfrastructureStatus');
+        }
+        return;
+      }
+
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Infrastructure Services Status',
+        title: 'XORNG Docker Services',
+      });
+
+      if (selected) {
+        // Could add per-service actions here
+      }
+    })
+  );
+
   // Show available agents command
   context.subscriptions.push(
     vscode.commands.registerCommand('xorng.showAgents', async () => {
@@ -453,6 +585,94 @@ function registerCommands(context: vscode.ExtensionContext): void {
       }
       // The output channel is managed by LocalOrchestrator
       vscode.commands.executeCommand('workbench.action.output.show', { channel: 'XORNG Core' });
+    })
+  );
+
+  // Refresh available models command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.refreshModels', async () => {
+      const copilotProvider = providerManager.getCopilotProvider();
+      
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'XORNG: Detecting available Copilot models...',
+          cancellable: false,
+        },
+        async () => {
+          const models = await copilotProvider.getAvailableModelsDetailed();
+          
+          if (models.length === 0) {
+            vscode.window.showWarningMessage('No Copilot models available. Ensure GitHub Copilot is installed and active.');
+            return;
+          }
+
+          // Create output channel to show model details
+          const outputChannel = vscode.window.createOutputChannel('XORNG Models');
+          outputChannel.clear();
+          outputChannel.appendLine('=== Available Copilot Models ===\n');
+          
+          for (const model of models) {
+            outputChannel.appendLine(`📦 ${model.family}`);
+            outputChannel.appendLine(`   ID: ${model.id}`);
+            outputChannel.appendLine(`   Name: ${model.name}`);
+            outputChannel.appendLine(`   Version: ${model.version}`);
+            outputChannel.appendLine(`   Max Input Tokens: ${model.maxInputTokens.toLocaleString()}`);
+            outputChannel.appendLine('');
+          }
+          
+          outputChannel.appendLine(`\nTotal: ${models.length} models detected`);
+          outputChannel.appendLine('\nUse "XORNG: Select Copilot Model" to change your preferred model.');
+          outputChannel.show();
+          
+          vscode.window.showInformationMessage(
+            `XORNG: Found ${models.length} Copilot models`,
+            'Select Model'
+          ).then(selection => {
+            if (selection === 'Select Model') {
+              vscode.commands.executeCommand('xorng.selectModel');
+            }
+          });
+        }
+      );
+    })
+  );
+
+  // Select Copilot model command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.selectModel', async () => {
+      const copilotProvider = providerManager.getCopilotProvider();
+      const models = await copilotProvider.getAvailableModelsDetailed();
+      
+      if (models.length === 0) {
+        vscode.window.showWarningMessage('No Copilot models available. Please run "XORNG: Refresh Available Models".');
+        return;
+      }
+
+      const config = vscode.workspace.getConfiguration('xorng');
+      const currentModel = config.get<string>('copilot.modelFamily') || 'gpt-4.1';
+
+      const items = models.map(model => ({
+        label: `$(symbol-misc) ${model.family}`,
+        description: model.name,
+        detail: `Max tokens: ${model.maxInputTokens.toLocaleString()} | Version: ${model.version}`,
+        family: model.family,
+        picked: model.family === currentModel,
+      }));
+
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Select a Copilot model',
+        title: 'XORNG: Select Copilot Model',
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+
+      if (selected) {
+        await config.update('copilot.modelFamily', selected.family, vscode.ConfigurationTarget.Global);
+        copilotProvider.setModelFamily(selected.family);
+        vscode.window.showInformationMessage(`XORNG: Switched to ${selected.family}`);
+        updateStatusBar();
+      }
     })
   );
 }

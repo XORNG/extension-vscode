@@ -33,7 +33,7 @@ export class ProviderManager implements vscode.Disposable {
     return {
       provider: config.get<AIProviderType>('provider') || 'copilot',
       copilot: {
-        modelFamily: config.get<string>('copilot.modelFamily') || 'gpt-4o',
+        modelFamily: config.get<string>('copilot.modelFamily') || 'gpt-4.1',
       },
       native: {
         provider: config.get<NativeProviderType>('native.provider') || 'openai',

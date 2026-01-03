@@ -16,17 +16,27 @@ import type {
  * 
  * Key features:
  * - Uses the user's existing Copilot subscription
- * - Supports multiple model families (gpt-4o, claude-3.5-sonnet, etc.)
+ * - Supports multiple model families (gpt-4.1, gpt-5, claude-sonnet-4.5, etc.)
+ * - Dynamic model detection via vscode.lm API
  * - Streaming responses for real-time feedback
  * - Respects VS Code's chat model selection
  */
 export class CopilotProvider extends BaseProvider {
   private preferredModelFamily: string;
   private cachedModel: vscode.LanguageModelChat | undefined;
+  private availableModels: Map<string, vscode.LanguageModelChat> = new Map();
+  private modelChangeDisposable: vscode.Disposable | undefined;
+  private _onModelsChanged = new vscode.EventEmitter<string[]>();
+  readonly onModelsChanged = this._onModelsChanged.event;
 
-  constructor(modelFamily: string = 'gpt-4o') {
+  constructor(modelFamily: string = 'gpt-4.1') {
     super('copilot', 'GitHub Copilot');
     this.preferredModelFamily = modelFamily;
+    
+    // Listen for model changes from VS Code
+    this.modelChangeDisposable = vscode.lm.onDidChangeChatModels(() => {
+      this.refreshAvailableModels();
+    });
   }
 
   /**
@@ -40,6 +50,65 @@ export class CopilotProvider extends BaseProvider {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Refresh the list of available models from VS Code
+   * This is called automatically when models change, or can be called manually
+   */
+  async refreshAvailableModels(): Promise<Map<string, vscode.LanguageModelChat>> {
+    this.checkDisposed();
+    try {
+      const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+      this.availableModels.clear();
+      
+      for (const model of models) {
+        // Use family as key since that's what we use for selection
+        if (!this.availableModels.has(model.family)) {
+          this.availableModels.set(model.family, model);
+        }
+      }
+      
+      // Clear cached model if it's no longer available
+      if (this.cachedModel && !this.availableModels.has(this.cachedModel.family)) {
+        this.cachedModel = undefined;
+      }
+      
+      // Fire event to notify listeners
+      this._onModelsChanged.fire(Array.from(this.availableModels.keys()));
+      
+      console.log(`XORNG: Detected ${this.availableModels.size} Copilot models:`, 
+        Array.from(this.availableModels.keys()).join(', '));
+      
+      return this.availableModels;
+    } catch (error) {
+      console.error('XORNG: Failed to refresh available models:', error);
+      return this.availableModels;
+    }
+  }
+
+  /**
+   * Get detailed information about all available models
+   */
+  async getAvailableModelsDetailed(): Promise<Array<{
+    id: string;
+    family: string;
+    name: string;
+    vendor: string;
+    version: string;
+    maxInputTokens: number;
+  }>> {
+    await this.refreshAvailableModels();
+    const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+    
+    return models.map(model => ({
+      id: model.id,
+      family: model.family,
+      name: model.name,
+      vendor: model.vendor,
+      version: model.version,
+      maxInputTokens: model.maxInputTokens,
+    }));
   }
 
   /**
@@ -226,15 +295,25 @@ export class CopilotProvider extends BaseProvider {
   }
 
   /**
-   * Get available model families
+   * Get available model families (simple string array)
    */
   async getAvailableModels(): Promise<string[]> {
-    const models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
-    return models.map((m: vscode.LanguageModelChat) => m.family);
+    await this.refreshAvailableModels();
+    return Array.from(this.availableModels.keys());
+  }
+
+  /**
+   * Get cached available models (synchronous, returns last known state)
+   */
+  getCachedAvailableModels(): string[] {
+    return Array.from(this.availableModels.keys());
   }
 
   dispose(): void {
     this.cachedModel = undefined;
+    this.availableModels.clear();
+    this.modelChangeDisposable?.dispose();
+    this._onModelsChanged.dispose();
     super.dispose();
   }
 }

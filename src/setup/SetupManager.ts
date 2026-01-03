@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
+import { DockerManager, ServiceStatus } from './DockerManager.js';
 
 const execAsync = promisify(exec);
 
@@ -82,12 +83,22 @@ export class SetupManager implements vscode.Disposable {
   private context: vscode.ExtensionContext;
   private outputChannel: vscode.OutputChannel;
   private disposables: vscode.Disposable[] = [];
+  private dockerManager: DockerManager;
 
   constructor(context: vscode.ExtensionContext) {
     this.context = context;
     this.globalStoragePath = context.globalStorageUri.fsPath;
     this.outputChannel = vscode.window.createOutputChannel('XORNG Setup');
     this.disposables.push(this.outputChannel);
+    this.dockerManager = new DockerManager(context);
+    this.disposables.push(this.dockerManager);
+  }
+
+  /**
+   * Get the DockerManager instance
+   */
+  getDockerManager(): DockerManager {
+    return this.dockerManager;
   }
 
   /**
@@ -169,7 +180,49 @@ export class SetupManager implements vscode.Disposable {
     this.log('Starting XORNG setup...');
 
     try {
-      // Ensure storage directory exists
+      // Step 1: Check Docker prerequisites
+      progress?.report({ message: 'Checking Docker prerequisites...' });
+      
+      const dockerAvailable = await this.dockerManager.isDockerAvailable();
+      if (!dockerAvailable) {
+        const action = await vscode.window.showErrorMessage(
+          'Docker is required for XORNG. Please install Docker Desktop or Docker Engine.',
+          'Open Docker Install Guide',
+          'Cancel'
+        );
+        if (action === 'Open Docker Install Guide') {
+          vscode.env.openExternal(vscode.Uri.parse('https://docs.docker.com/get-docker/'));
+        }
+        return false;
+      }
+
+      const dockerRunning = await this.dockerManager.isDockerRunning();
+      if (!dockerRunning) {
+        const action = await vscode.window.showErrorMessage(
+          'Docker daemon is not running. Please start Docker Desktop or the Docker service.',
+          'Retry',
+          'Cancel'
+        );
+        if (action === 'Retry') {
+          return this.runSetup(progress);
+        }
+        return false;
+      }
+
+      // Step 2: Start Docker infrastructure services (Redis, etc.)
+      progress?.report({ message: 'Starting infrastructure services (Redis)...' });
+      this.log('Starting Docker infrastructure services...');
+      
+      try {
+        await this.dockerManager.startServices(progress);
+        this.log('✓ Docker infrastructure services started');
+      } catch (error) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        this.log(`✗ Failed to start Docker services: ${errorMsg}`);
+        throw new Error(`Failed to start infrastructure services: ${errorMsg}`);
+      }
+
+      // Step 3: Ensure storage directory exists
       await fs.promises.mkdir(path.join(this.globalStoragePath, 'repos'), { recursive: true });
 
       const totalRepos = REPOS.length;
@@ -182,13 +235,13 @@ export class SetupManager implements vscode.Disposable {
         repos: {},
       };
 
-      // Clone and setup each repository
+      // Step 4: Clone and setup each repository
       for (const repo of REPOS) {
         const repoPath = this.getRepoPath(repo.name);
         
         progress?.report({
           message: `Setting up ${repo.name}...`,
-          increment: (1 / totalRepos) * 100,
+          increment: (1 / totalRepos) * 70,  // 70% for repos, 30% for docker
         });
 
         try {
@@ -407,6 +460,47 @@ export class SetupManager implements vscode.Disposable {
       version: state?.repos[repo.name]?.version ?? '',
       path: this.getRepoPath(repo.name),
     }));
+  }
+
+  /**
+   * Start infrastructure services (Docker containers)
+   */
+  async startInfrastructure(): Promise<boolean> {
+    try {
+      await this.dockerManager.startServices();
+      return true;
+    } catch (error) {
+      this.log(`Failed to start infrastructure: ${error}`);
+      return false;
+    }
+  }
+
+  /**
+   * Stop infrastructure services
+   */
+  async stopInfrastructure(): Promise<void> {
+    await this.dockerManager.stopServices();
+  }
+
+  /**
+   * Get infrastructure services status
+   */
+  async getInfrastructureStatus(): Promise<ServiceStatus[]> {
+    return this.dockerManager.getServicesStatus();
+  }
+
+  /**
+   * Check if infrastructure is running
+   */
+  async isInfrastructureReady(): Promise<boolean> {
+    return this.dockerManager.isRedisReady();
+  }
+
+  /**
+   * Get Redis URL for Core configuration
+   */
+  getRedisUrl(): string {
+    return this.dockerManager.getRedisUrl();
   }
 
   /**

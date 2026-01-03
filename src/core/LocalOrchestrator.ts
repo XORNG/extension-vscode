@@ -22,6 +22,15 @@ import {
 } from '../ipc/types.js';
 
 /**
+ * Configuration options for LocalOrchestrator
+ */
+export interface OrchestratorConfig {
+  corePath: string;
+  redisUrl?: string;
+  logLevel?: string;
+}
+
+/**
  * LocalOrchestrator - Manages XORNG Core as a local child process
  * 
  * Key responsibilities:
@@ -33,6 +42,8 @@ import {
 export class LocalOrchestrator implements vscode.Disposable {
   private coreProcess: ChildProcess | null = null;
   private corePath: string;
+  private redisUrl: string;
+  private logLevel: string;
   private isReady = false;
   private pendingRequests = new Map<string, {
     resolve: (value: unknown) => void;
@@ -52,8 +63,10 @@ export class LocalOrchestrator implements vscode.Disposable {
   private outputChannel: vscode.OutputChannel;
   private disposables: vscode.Disposable[] = [];
   
-  constructor(corePath: string) {
-    this.corePath = corePath;
+  constructor(config: OrchestratorConfig) {
+    this.corePath = config.corePath;
+    this.redisUrl = config.redisUrl || 'redis://localhost:6379';
+    this.logLevel = config.logLevel || 'info';
     this.outputChannel = vscode.window.createOutputChannel('XORNG Core');
     this.disposables.push(this.outputChannel);
   }
@@ -72,6 +85,8 @@ export class LocalOrchestrator implements vscode.Disposable {
         const coreEntryPoint = path.join(this.corePath, 'dist', 'ipc-handler.js');
         
         this.log(`Starting Core from: ${coreEntryPoint}`);
+        this.log(`Redis URL: ${this.redisUrl}`);
+        this.log(`Log Level: ${this.logLevel}`);
         
         this.coreProcess = fork(coreEntryPoint, [], {
           stdio: ['pipe', 'pipe', 'pipe', 'ipc'],
@@ -80,6 +95,8 @@ export class LocalOrchestrator implements vscode.Disposable {
             ...process.env,
             NODE_ENV: 'production',
             XORNG_IPC_MODE: 'true',
+            REDIS_URL: this.redisUrl,
+            LOG_LEVEL: this.logLevel,
           },
         });
 
