@@ -1,8 +1,19 @@
 import * as vscode from 'vscode';
-import type { AIProvider, AIProviderType, NativeProviderType, XORNGConfig } from '../types/index.js';
+import type { AIProvider, AIProviderType, NativeProviderType, XORNGConfig, TaskModelMap } from '../types/index.js';
 import { CopilotProvider } from '../providers/CopilotProvider.js';
 import { NativeProvider } from '../providers/NativeProvider.js';
 import { ClaudeProvider, CursorProvider, CodexProvider } from '../providers/FutureProviders.js';
+
+/**
+ * Default task model mapping
+ */
+const DEFAULT_TASK_MODELS: TaskModelMap = {
+  review: 'gpt-4.1',
+  security: 'claude-sonnet-4',
+  explain: 'gpt-4o',
+  refactor: 'gpt-4.1',
+  default: 'gpt-4.1',
+};
 
 /**
  * ProviderManager - Manages AI provider instances and switching
@@ -12,6 +23,7 @@ import { ClaudeProvider, CursorProvider, CodexProvider } from '../providers/Futu
  * - Switching between providers (Copilot, Native, Claude, etc.)
  * - Configuration synchronization
  * - Provider availability checking
+ * - Task-specific model selection
  */
 export class ProviderManager implements vscode.Disposable {
   private providers: Map<AIProviderType, AIProvider> = new Map();
@@ -34,6 +46,11 @@ export class ProviderManager implements vscode.Disposable {
       provider: config.get<AIProviderType>('provider') || 'copilot',
       copilot: {
         modelFamily: config.get<string>('copilot.modelFamily') || 'gpt-4.1',
+        useTaskSpecificModels: config.get<boolean>('copilot.useTaskSpecificModels') || false,
+        taskModels: {
+          ...DEFAULT_TASK_MODELS,
+          ...config.get<TaskModelMap>('copilot.taskModels'),
+        },
       },
       native: {
         provider: config.get<NativeProviderType>('native.provider') || 'openai',
@@ -107,6 +124,43 @@ export class ProviderManager implements vscode.Disposable {
    */
   getCopilotProvider(): CopilotProvider {
     return this.providers.get('copilot') as CopilotProvider;
+  }
+
+  /**
+   * Check if task-specific models are enabled
+   */
+  isTaskSpecificModelsEnabled(): boolean {
+    return this.getConfig().copilot.useTaskSpecificModels;
+  }
+
+  /**
+   * Get the model family for a specific task/command
+   * @param command The XORNG command (review, security, explain, etc.)
+   * @returns The model family to use for this task
+   */
+  getModelForTask(command?: string): string {
+    const config = this.getConfig();
+    
+    if (!config.copilot.useTaskSpecificModels) {
+      // If task-specific models are disabled, use the default model family
+      return config.copilot.modelFamily;
+    }
+
+    // Get task-specific model, fallback to default
+    const taskModels = config.copilot.taskModels;
+    
+    if (command && taskModels[command]) {
+      return taskModels[command]!;
+    }
+    
+    return taskModels.default || config.copilot.modelFamily;
+  }
+
+  /**
+   * Get all task model configurations
+   */
+  getTaskModels(): TaskModelMap {
+    return this.getConfig().copilot.taskModels;
   }
 
   /**

@@ -675,6 +675,66 @@ function registerCommands(context: vscode.ExtensionContext): void {
       }
     })
   );
+
+  // Diagnostic command to show task-specific model configuration
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.showModelConfig', async () => {
+      const config = vscode.workspace.getConfiguration('xorng');
+      const useTaskSpecific = config.get<boolean>('copilot.useTaskSpecificModels') || false;
+      const taskModels = config.get<Record<string, string>>('copilot.taskModels') || {};
+      const defaultModel = config.get<string>('copilot.modelFamily') || 'gpt-4.1';
+
+      const outputChannel = vscode.window.createOutputChannel('XORNG Model Config');
+      outputChannel.clear();
+      outputChannel.appendLine('=== XORNG Model Configuration ===\n');
+      outputChannel.appendLine(`Task-Specific Models Enabled: ${useTaskSpecific ? '✅ YES' : '❌ NO'}`);
+      outputChannel.appendLine(`Default Model Family: ${defaultModel}`);
+      outputChannel.appendLine('');
+      outputChannel.appendLine('Task-specific Model Mapping:');
+      outputChannel.appendLine('----------------------------');
+      
+      const commands = ['review', 'security', 'explain', 'refactor', 'default'];
+      for (const cmd of commands) {
+        const model = taskModels[cmd] || '(not configured)';
+        outputChannel.appendLine(`  /${cmd}: ${model}`);
+      }
+      
+      outputChannel.appendLine('');
+      outputChannel.appendLine('How to enable task-specific models:');
+      outputChannel.appendLine('1. Set "xorng.copilot.useTaskSpecificModels": true in settings');
+      outputChannel.appendLine('2. Configure "xorng.copilot.taskModels" with your preferred models');
+      outputChannel.appendLine('');
+      outputChannel.appendLine('Available commands: /review, /security, /explain, /refactor');
+      outputChannel.appendLine('');
+      
+      // Also show available models
+      const copilotProvider = providerManager.getCopilotProvider();
+      const availableModels = await copilotProvider.getAvailableModelsDetailed();
+      
+      outputChannel.appendLine('Available Copilot Model Families:');
+      outputChannel.appendLine('---------------------------------');
+      for (const model of availableModels) {
+        outputChannel.appendLine(`  - ${model.family} (${model.name})`);
+      }
+      
+      outputChannel.show();
+      
+      if (!useTaskSpecific) {
+        const enable = await vscode.window.showInformationMessage(
+          'Task-specific models are currently DISABLED. Would you like to enable them?',
+          'Enable',
+          'View Config'
+        );
+        
+        if (enable === 'Enable') {
+          await config.update('copilot.useTaskSpecificModels', true, vscode.ConfigurationTarget.Global);
+          vscode.window.showInformationMessage('XORNG: Task-specific models enabled!');
+        } else if (enable === 'View Config') {
+          vscode.commands.executeCommand('workbench.action.openSettings', 'xorng.copilot');
+        }
+      }
+    })
+  );
 }
 
 /**

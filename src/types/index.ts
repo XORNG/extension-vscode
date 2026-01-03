@@ -29,12 +29,27 @@ export interface Message {
 }
 
 /**
+ * Task-specific model mapping
+ */
+export interface TaskModelMap {
+  review?: string;
+  security?: string;
+  explain?: string;
+  refactor?: string;
+  config?: string;
+  default: string;
+  [key: string]: string | undefined;
+}
+
+/**
  * XORNG extension configuration
  */
 export interface XORNGConfig {
   provider: AIProviderType;
   copilot: {
     modelFamily: string;
+    useTaskSpecificModels: boolean;
+    taskModels: TaskModelMap;
   };
   native: {
     provider: NativeProviderType;

@@ -158,6 +158,10 @@
       {
         "command": "xorng.selectModel",
         "title": "XORNG: Select Copilot Model"
+      },
+      {
+        "command": "xorng.showModelConfig",
+        "title": "XORNG: Show Model Configuration"
       }
     ],
     "configuration": {
@@ -220,6 +224,25 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically detect and update available Copilot models"
+        },
+        "xorng.copilot.useTaskSpecificModels": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When enabled, XORNG will use task-specific models instead of the model selected in the chat dropdown. Configure models per task using the `xorng.copilot.taskModels` setting."
+        },
+        "xorng.copilot.taskModels": {
+          "type": "object",
+          "default": {
+            "review": "gpt-4.1",
+            "security": "claude-sonnet-4",
+            "explain": "gpt-4o",
+            "refactor": "gpt-4.1",
+            "default": "gpt-4.1"
+          },
+          "markdownDescription": "Map of XORNG commands to Copilot model families. Use `XORNG: Refresh Available Models` to see available models. Requires `xorng.copilot.useTaskSpecificModels` to be enabled.",
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "xorng.native.provider": {
           "type": "string",

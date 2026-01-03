@@ -95,7 +95,7 @@ const REPOS: RepoConfig[] = [
   },
 ];
 
-const SETUP_VERSION = '1.0.0';
+const SETUP_VERSION = '1.0.1';
 
 /**
  * SetupManager - Handles auto-setup and updates for XORNG components
@@ -284,6 +284,22 @@ export class SetupManager implements vscode.Disposable {
           // Build if needed
           if (await this.hasBuildScript(repoPath)) {
             this.log(`Building ${repo.name}...`);
+            
+            // Clean build artifacts to ensure fresh build
+            const distPath = path.join(repoPath, 'dist');
+            const tsBuildInfoPath = path.join(repoPath, 'tsconfig.tsbuildinfo');
+            
+            try {
+              if (fs.existsSync(distPath)) {
+                await fs.promises.rm(distPath, { recursive: true, force: true });
+              }
+              if (fs.existsSync(tsBuildInfoPath)) {
+                await fs.promises.rm(tsBuildInfoPath, { force: true });
+              }
+            } catch (e) {
+              this.log(`Warning: Failed to clean build artifacts: ${e}`);
+            }
+
             await this.npmBuild(repoPath);
           }
 

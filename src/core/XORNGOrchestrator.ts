@@ -316,9 +316,20 @@ export class XORNGOrchestrator implements vscode.Disposable {
           metadata: {
             command: request.command,
             vscodeRequestId: requestId,
+            model: {
+              vendor: request.model.vendor,
+              family: request.model.family,
+              id: request.model.id
+            }
           },
         }
       );
+
+      // Check if any agents were actually invoked
+      if (response.metadata?.agentsInvoked === 0) {
+        console.log('No agents invoked by Core, falling back to local processing');
+        return this.handleChatRequestLocally(requestId, request, chatContext, stream, token, startTime);
+      }
 
       const executionTime = Date.now() - startTime;
 
@@ -366,16 +377,45 @@ export class XORNGOrchestrator implements vscode.Disposable {
     const provider = this.providerManager.getCurrentProvider();
     const providerType = this.providerManager.getCurrentProviderType();
 
-    // Use the model from the request if using Copilot (respects user's model selection)
+    let usedModelInfo: { usedModel?: string; usedFamily?: string } = {};
+
+    // Use the model from the request if using Copilot
     if (providerType === 'copilot') {
       const copilotProvider = this.providerManager.getCopilotProvider();
-      await copilotProvider.sendStreamingRequestWithModel(
+      
+      // Determine which model family to use
+      // If task specific models are enabled, getModelForTask returns the task model
+      // If disabled, it returns the configured modelFamily
+      // We prioritize configuration over the UI dropdown to ensure 'modelFamily' setting works
+      const targetModelFamily = this.providerManager.getModelForTask(request.command);
+      const isTaskSpecific = this.providerManager.isTaskSpecificModelsEnabled();
+      
+      if (isTaskSpecific) {
+        console.log(`XORNG Orchestrator: Task-specific models ENABLED`);
+        console.log(`XORNG Orchestrator: Command: '${request.command || '(none)'}' -> Target family: '${targetModelFamily}'`);
+        stream.progress(`Using configured model: ${targetModelFamily}`);
+      } else {
+        console.log(`XORNG Orchestrator: Task-specific models DISABLED - using configured model family: ${targetModelFamily}`);
+        // If the user has configured a specific model family, we use it instead of the dropdown selection
+        // This ensures the 'modelFamily' setting is respected
+      }
+
+      console.log(`XORNG Orchestrator: User's dropdown selection was: '${request.model.family}' (ignored in favor of configuration)`);
+      
+      usedModelInfo = await copilotProvider.sendStreamingRequestWithFamily(
         messages,
         stream,
-        request.model,
+        targetModelFamily,
         {},
         token
       );
+      
+      // Show which model was actually used at the end if it differs from request or is task specific
+      if (isTaskSpecific || (usedModelInfo.usedFamily && request.model.family && !usedModelInfo.usedFamily.includes(request.model.family))) {
+        stream.markdown(`\n\n---\n*Model used: ${usedModelInfo.usedFamily}*`);
+      }
+      
+      console.log(`XORNG Orchestrator: Actually used model: ${usedModelInfo.usedFamily} (${usedModelInfo.usedModel})`);
     } else {
       await provider.sendStreamingRequest(messages, stream, {}, token);
     }
@@ -391,6 +431,9 @@ export class XORNGOrchestrator implements vscode.Disposable {
         requestId,
         executionTimeMs: executionTime,
         provider: providerType,
+        modelUsed: usedModelInfo.usedModel,
+        modelFamily: usedModelInfo.usedFamily,
+        taskSpecificModels: this.providerManager.isTaskSpecificModelsEnabled(),
       },
     };
   }

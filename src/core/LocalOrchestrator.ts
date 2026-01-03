@@ -426,10 +426,21 @@ export class LocalOrchestrator implements vscode.Disposable {
     try {
       const { messages, options } = request.payload;
       
+      // Get preferred model family from config
+      const config = vscode.workspace.getConfiguration('xorng');
+      const preferredFamily = config.get<string>('copilot.modelFamily') || 'gpt-4.1';
+
+      // Determine model family to use
+      // If options.model is provided but is a generic default (gpt-4/gpt-4o), override with preferred family
+      let family = options?.model || preferredFamily;
+      if (family === 'gpt-4' || family === 'gpt-4o') {
+        family = preferredFamily;
+      }
+
       // Get a model from VS Code
       const models = await vscode.lm.selectChatModels({
         vendor: 'copilot',
-        family: options?.model || 'gpt-4o',
+        family,
       });
 
       if (models.length === 0) {
@@ -500,10 +511,36 @@ export class LocalOrchestrator implements vscode.Disposable {
     try {
       const { messages, options } = request.payload;
       
-      const models = await vscode.lm.selectChatModels({
-        vendor: 'copilot',
-        family: options?.model || 'gpt-4o',
-      });
+      // Get preferred model family from config
+      const config = vscode.workspace.getConfiguration('xorng');
+      const preferredFamily = config.get<string>('copilot.modelFamily') || 'gpt-4.1';
+
+      // Determine model selector
+      let selector: vscode.LanguageModelChatSelector;
+
+      // Check if options.model contains full metadata (propagated from UI)
+      if (options?.model && typeof options.model === 'object' && 'vendor' in options.model) {
+        const modelMeta = options.model as any;
+        selector = {
+          vendor: modelMeta.vendor,
+          family: modelMeta.family,
+        };
+      } else {
+        // Legacy string identifier or default
+        let family = (typeof options?.model === 'string' ? options.model : undefined) || preferredFamily;
+        
+        // Override generic defaults with preference
+        if (family === 'gpt-4' || family === 'gpt-4o') {
+          family = preferredFamily;
+        }
+        
+        selector = {
+          vendor: 'copilot',
+          family,
+        };
+      }
+
+      const models = await vscode.lm.selectChatModels(selector);
 
       if (models.length === 0) {
         this.sendMessage(createIPCResponse<LLMResponseMessage>(

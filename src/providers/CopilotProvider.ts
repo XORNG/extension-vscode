@@ -125,41 +125,76 @@ export class CopilotProvider extends BaseProvider {
 
   /**
    * Get or select a language model
+   * @param preferredFamily The preferred model family (e.g., 'gpt-4o', 'claude-3.5-sonnet')
+   * @param requestModel Optional model from chat request (used when respecting UI selection)
+   * @param skipCache If true, always fetch fresh model (useful for task-specific routing)
    */
   private async getModel(
     preferredFamily?: string,
-    requestModel?: vscode.LanguageModelChat
+    requestModel?: vscode.LanguageModelChat,
+    skipCache: boolean = false
   ): Promise<vscode.LanguageModelChat> {
     // If a model is provided in the request (from chat participant), use it
     if (requestModel) {
       return requestModel;
     }
 
-    // Try to use cached model
-    if (this.cachedModel) {
+    const family = preferredFamily || this.preferredModelFamily;
+
+    // Try to use cached model if it matches the requested family (unless skipCache)
+    if (!skipCache && this.cachedModel && this.cachedModel.family === family) {
       return this.cachedModel;
     }
-
-    const family = preferredFamily || this.preferredModelFamily;
     
     // Select model by family
+    console.log(`XORNG CopilotProvider: Selecting model with family '${family}'`);
     const models = await vscode.lm.selectChatModels({
       vendor: 'copilot',
       family: family,
     });
 
-    if (models.length === 0) {
-      // Fallback to any Copilot model
-      const fallbackModels = await vscode.lm.selectChatModels({ vendor: 'copilot' });
-      if (fallbackModels.length === 0) {
-        throw new Error('No Copilot models available. Please ensure GitHub Copilot is installed and activated.');
+    if (models.length > 0) {
+      console.log(`XORNG CopilotProvider: Found ${models.length} model(s) for family '${family}': ${models.map(m => m.id).join(', ')}`);
+      // Don't cache when skipCache is true (for task-specific routing)
+      if (!skipCache) {
+        this.cachedModel = models[0];
       }
-      this.cachedModel = fallbackModels[0];
-      return this.cachedModel;
+      return models[0];
     }
 
-    this.cachedModel = models[0];
-    return this.cachedModel;
+    // Family not found - try partial match by searching all models
+    console.log(`XORNG CopilotProvider: No exact match for family '${family}', searching all models...`);
+    const allModels = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+    
+    if (allModels.length === 0) {
+      throw new Error('No Copilot models available. Please ensure GitHub Copilot is installed and activated.');
+    }
+
+    // Try to find a model that contains the family name (partial match)
+    const familyLower = family.toLowerCase();
+    const partialMatch = allModels.find(m => 
+      m.family.toLowerCase().includes(familyLower) || 
+      familyLower.includes(m.family.toLowerCase()) ||
+      m.id.toLowerCase().includes(familyLower)
+    );
+
+    if (partialMatch) {
+      console.log(`XORNG CopilotProvider: Found partial match: ${partialMatch.family} (${partialMatch.id})`);
+      if (!skipCache) {
+        this.cachedModel = partialMatch;
+      }
+      return partialMatch;
+    }
+
+    // Log available models for debugging
+    console.log(`XORNG CopilotProvider: Available model families: ${allModels.map(m => m.family).join(', ')}`);
+    console.log(`XORNG CopilotProvider: Falling back to first available model: ${allModels[0].family}`);
+    
+    // Fallback to first available model
+    if (!skipCache) {
+      this.cachedModel = allModels[0];
+    }
+    return allModels[0];
   }
 
   /**
@@ -279,6 +314,59 @@ export class CopilotProvider extends BaseProvider {
         if (lmError.cause instanceof Error && lmError.cause.message.includes('off_topic')) {
           stream.markdown(vscode.l10n.t("I'm sorry, I cannot help with that request."));
           return;
+        }
+        throw new Error(`Copilot error (${lmError.code}): ${lmError.message}`);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Send a streaming request using a specific model family
+   * This method selects a model programmatically based on the family, 
+   * ignoring the user's chat dropdown selection.
+   * Use this for task-specific model routing.
+   */
+  async sendStreamingRequestWithFamily(
+    messages: Message[],
+    stream: vscode.ChatResponseStream,
+    modelFamily: string,
+    options?: ProviderRequestOptions,
+    token?: vscode.CancellationToken
+  ): Promise<{ usedModel: string; usedFamily: string }> {
+    this.checkDisposed();
+
+    // Select model by family - skip cache to ensure we get the right model for this task
+    const model = await this.getModel(modelFamily, undefined, true);
+    
+    console.log(`XORNG CopilotProvider.sendStreamingRequestWithFamily: Requested '${modelFamily}', using '${model.family}' (${model.id})`);
+    
+    const lmMessages = this.toLanguageModelMessages(messages);
+
+    const requestOptions: vscode.LanguageModelChatRequestOptions = {};
+    if (options?.tools) {
+      requestOptions.tools = options.tools;
+    }
+
+    const cancellationToken = token || new vscode.CancellationTokenSource().token;
+
+    try {
+      const response = await model.sendRequest(lmMessages, requestOptions, cancellationToken);
+
+      for await (const fragment of response.text) {
+        stream.markdown(fragment);
+      }
+
+      return {
+        usedModel: model.id,
+        usedFamily: model.family,
+      };
+    } catch (error: unknown) {
+      if (error instanceof vscode.LanguageModelError) {
+        const lmError = error as vscode.LanguageModelError;
+        if (lmError.cause instanceof Error && lmError.cause.message.includes('off_topic')) {
+          stream.markdown(vscode.l10n.t("I'm sorry, I cannot help with that request."));
+          return { usedModel: model.id, usedFamily: model.family };
         }
         throw new Error(`Copilot error (${lmError.code}): ${lmError.message}`);
       }
