@@ -1,0 +1,292 @@
+{
+  "name": "xorng-vscode",
+  "displayName": "XORNG - AI Orchestration Framework",
+  "description": "Intelligent AI orchestration for enhanced coding assistance with GitHub Copilot and other AI providers",
+  "version": "0.1.0",
+  "publisher": "xorng",
+  "icon": "resources/xorng-icon.svg",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/XORNG/extension-vscode"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Machine Learning",
+    "Other"
+  ],
+  "keywords": [
+    "ai",
+    "copilot",
+    "claude",
+    "cursor",
+    "codex",
+    "orchestration",
+    "code review",
+    "context management"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "xorng.orchestrator",
+        "name": "xorng",
+        "fullName": "XORNG Orchestrator",
+        "description": "AI orchestration with intelligent context management and sub-agent coordination",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "review",
+            "description": "Review code for quality, security, and best practices"
+          },
+          {
+            "name": "explain",
+            "description": "Explain code or concepts with documentation context"
+          },
+          {
+            "name": "refactor",
+            "description": "Suggest refactoring improvements with best practices"
+          },
+          {
+            "name": "security",
+            "description": "Analyze code for security vulnerabilities"
+          },
+          {
+            "name": "config",
+            "description": "Configure XORNG settings and AI provider"
+          }
+        ],
+        "disambiguation": [
+          {
+            "category": "code-review",
+            "description": "The user wants code to be reviewed for quality, issues, or improvements",
+            "examples": [
+              "Review this code for me",
+              "What are the issues in this function?",
+              "Can you check this for bugs?"
+            ]
+          },
+          {
+            "category": "security",
+            "description": "The user wants to check code for security vulnerabilities",
+            "examples": [
+              "Is this code secure?",
+              "Check for security issues",
+              "Find vulnerabilities in this code"
+            ]
+          },
+          {
+            "category": "orchestration",
+            "description": "The user wants XORNG to coordinate multiple AI capabilities",
+            "examples": [
+              "Use XORNG to analyze this",
+              "Orchestrate a full review",
+              "Get comprehensive analysis"
+            ]
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "xorng.selectProvider",
+        "title": "XORNG: Select AI Provider"
+      },
+      {
+        "command": "xorng.showStatus",
+        "title": "XORNG: Show Status"
+      },
+      {
+        "command": "xorng.clearMemory",
+        "title": "XORNG: Clear Conversation Memory"
+      },
+      {
+        "command": "xorng.toggleProvider",
+        "title": "XORNG: Toggle Between Copilot and Native Mode"
+      },
+      {
+        "command": "xorng.startCore",
+        "title": "XORNG: Start Core"
+      },
+      {
+        "command": "xorng.stopCore",
+        "title": "XORNG: Stop Core"
+      },
+      {
+        "command": "xorng.restartCore",
+        "title": "XORNG: Restart Core"
+      },
+      {
+        "command": "xorng.setup",
+        "title": "XORNG: Setup Components"
+      },
+      {
+        "command": "xorng.update",
+        "title": "XORNG: Update Components"
+      },
+      {
+        "command": "xorng.showAgents",
+        "title": "XORNG: Show Available Sub-Agents"
+      },
+      {
+        "command": "xorng.showCoreLogs",
+        "title": "XORNG: Show Core Logs"
+      }
+    ],
+    "configuration": {
+      "title": "XORNG",
+      "properties": {
+        "xorng.provider": {
+          "type": "string",
+          "default": "copilot",
+          "enum": [
+            "copilot",
+            "native",
+            "claude",
+            "cursor",
+            "codex"
+          ],
+          "enumDescriptions": [
+            "Use GitHub Copilot's language model (recommended)",
+            "Use XORNG's native AI providers (OpenAI, Anthropic, etc.)",
+            "Use Claude Code integration (when available)",
+            "Use Cursor's AI integration (when available)",
+            "Use OpenAI Codex integration (when available)"
+          ],
+          "description": "Select the AI provider for XORNG orchestration"
+        },
+        "xorng.copilot.modelFamily": {
+          "type": "string",
+          "default": "gpt-4o",
+          "enum": [
+            "gpt-4o",
+            "gpt-4o-mini",
+            "o1",
+            "o1-mini",
+            "claude-3.5-sonnet"
+          ],
+          "description": "Preferred model family when using GitHub Copilot"
+        },
+        "xorng.native.provider": {
+          "type": "string",
+          "default": "openai",
+          "enum": [
+            "openai",
+            "anthropic",
+            "local"
+          ],
+          "description": "Native AI provider when not using Copilot"
+        },
+        "xorng.native.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key for native provider (stored securely)"
+        },
+        "xorng.memory.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable in-session conversation memory"
+        },
+        "xorng.memory.shortTermTTL": {
+          "type": "number",
+          "default": 3600,
+          "description": "Short-term memory TTL in seconds"
+        },
+        "xorng.telemetry.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable token tracking and telemetry"
+        },
+        "xorng.logging.level": {
+          "type": "string",
+          "default": "info",
+          "enum": [
+            "debug",
+            "info",
+            "warn",
+            "error"
+          ],
+          "description": "Logging level for XORNG"
+        },
+        "xorng.autoSetup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically setup XORNG components on extension activation"
+        },
+        "xorng.core.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start XORNG Core after setup"
+        }
+      }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "xorng.selectProvider",
+          "group": "xorng"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "xorng.selectProvider"
+        },
+        {
+          "command": "xorng.showStatus"
+        },
+        {
+          "command": "xorng.clearMemory"
+        },
+        {
+          "command": "xorng.toggleProvider"
+        },
+        {
+          "command": "xorng.startCore"
+        },
+        {
+          "command": "xorng.stopCore"
+        },
+        {
+          "command": "xorng.restartCore"
+        },
+        {
+          "command": "xorng.setup"
+        },
+        {
+          "command": "xorng.update"
+        },
+        {
+          "command": "xorng.showAgents"
+        },
+        {
+          "command": "xorng.showCoreLogs"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.95.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.3.0",
+    "@vscode/vsce": "^2.22.0"
+  }
+}

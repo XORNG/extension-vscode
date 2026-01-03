@@ -1,0 +1,533 @@
+import * as vscode from 'vscode';
+import { ProviderManager } from './core/ProviderManager.js';
+import { XORNGOrchestrator } from './core/XORNGOrchestrator.js';
+import { SetupManager } from './setup/SetupManager.js';
+
+/**
+ * XORNG VS Code Extension
+ * 
+ * Entry point for the XORNG extension that provides:
+ * - Chat participant (@xorng) for AI-assisted coding
+ * - Provider abstraction (Copilot, Native, Claude, Cursor, Codex)
+ * - Sub-agent orchestration for specialized tasks
+ * - Memory and context management
+ * - Auto-setup and updates of XORNG components
+ */
+
+let providerManager: ProviderManager;
+let orchestrator: XORNGOrchestrator;
+let setupManager: SetupManager;
+let statusBarItem: vscode.StatusBarItem;
+
+/**
+ * Extension activation
+ */
+export async function activate(context: vscode.ExtensionContext) {
+  console.log('XORNG extension is activating...');
+
+  // Initialize setup manager with extension context
+  setupManager = new SetupManager(context);
+  context.subscriptions.push(setupManager);
+
+  // Initialize provider manager
+  providerManager = new ProviderManager();
+  context.subscriptions.push(providerManager);
+
+  // Initialize orchestrator (without Core path initially)
+  orchestrator = new XORNGOrchestrator(providerManager);
+  context.subscriptions.push(orchestrator);
+
+  // Create chat participant
+  const participant = createChatParticipant(context);
+
+  // Register commands
+  registerCommands(context);
+
+  // Create status bar
+  createStatusBar(context);
+
+  // Listen for configuration changes
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e: vscode.ConfigurationChangeEvent) => {
+      if (e.affectsConfiguration('xorng')) {
+        providerManager.updateConfiguration();
+        updateStatusBar();
+      }
+    })
+  );
+
+  // Listen for provider changes
+  context.subscriptions.push(
+    providerManager.onProviderChanged(() => {
+      updateStatusBar();
+    })
+  );
+
+  // Run auto-setup in background
+  runAutoSetup(context);
+
+  console.log('XORNG extension activated successfully');
+}
+
+/**
+ * Run auto-setup for XORNG components
+ */
+async function runAutoSetup(context: vscode.ExtensionContext): Promise<void> {
+  const config = vscode.workspace.getConfiguration('xorng');
+  const autoSetup = config.get<boolean>('autoSetup', true);
+
+  if (!autoSetup) {
+    console.log('XORNG auto-setup disabled');
+    return;
+  }
+
+  try {
+    // Check if setup is needed
+    if (await setupManager.needsSetup()) {
+      // First-time setup
+      vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Window,
+          title: 'XORNG: Setting up components...',
+        },
+        async (progress) => {
+          progress.report({ message: 'Cloning repositories...' });
+          await setupManager.runSetup(progress);
+          
+          // Set Core path and optionally start it
+          const corePath = setupManager.getCorePath();
+          if (corePath) {
+            orchestrator.setCorePath(corePath);
+            
+            // Auto-start Core if enabled
+            const autoStart = config.get<boolean>('core.autoStart', true);
+            if (autoStart) {
+              progress.report({ message: 'Starting XORNG Core...' });
+              await orchestrator.startCore();
+            }
+          }
+          
+          updateStatusBar();
+          vscode.window.showInformationMessage('XORNG: Setup completed successfully');
+        }
+      );
+    } else {
+      // Run update for existing installation
+      const corePath = setupManager.getCorePath();
+      if (corePath) {
+        orchestrator.setCorePath(corePath);
+        
+        // Update in background (pull latest changes)
+        setupManager.runUpdate().catch(err => {
+          console.warn('XORNG update failed:', err);
+        });
+        
+        // Auto-start Core if enabled
+        const autoStart = config.get<boolean>('core.autoStart', true);
+        if (autoStart) {
+          await orchestrator.startCore();
+        }
+        
+        updateStatusBar();
+      }
+    }
+  } catch (error) {
+    console.error('XORNG auto-setup failed:', error);
+    vscode.window.showWarningMessage(
+      `XORNG: Auto-setup failed. You can try again with the "XORNG: Setup Components" command.`
+    );
+  }
+}
+
+/**
+ * Create the XORNG chat participant
+ */
+function createChatParticipant(context: vscode.ExtensionContext): vscode.ChatParticipant {
+  // Create the chat participant
+  const participant = vscode.chat.createChatParticipant(
+    'xorng.orchestrator',
+    async (
+      request: vscode.ChatRequest,
+      chatContext: vscode.ChatContext,
+      stream: vscode.ChatResponseStream,
+      token: vscode.CancellationToken
+    ): Promise<vscode.ChatResult> => {
+      return orchestrator.handleChatRequest(request, chatContext, stream, token);
+    }
+  );
+
+  // Set participant properties
+  participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'resources', 'xorng-icon.png');
+
+  // Add follow-up provider
+  participant.followupProvider = {
+    provideFollowups(
+      result: vscode.ChatResult,
+      _context: vscode.ChatContext,
+      _token: vscode.CancellationToken
+    ): vscode.ProviderResult<vscode.ChatFollowup[]> {
+      const followups: vscode.ChatFollowup[] = [];
+      const metadata = result.metadata as { command?: string } | undefined;
+
+      // Suggest follow-ups based on the command used
+      if (metadata?.command === 'review') {
+        followups.push(
+          { prompt: 'Fix the issues found', label: 'Fix Issues' },
+          { prompt: 'Check for security issues', label: 'Security Check', command: 'security' }
+        );
+      } else if (metadata?.command === 'security') {
+        followups.push(
+          { prompt: 'Show me how to fix the vulnerabilities', label: 'Show Fixes' },
+          { prompt: 'Review the overall code quality', label: 'Code Review', command: 'review' }
+        );
+      } else if (metadata?.command === 'explain') {
+        followups.push(
+          { prompt: 'Generate documentation for this code', label: 'Generate Docs' },
+          { prompt: 'Suggest improvements', label: 'Improve', command: 'refactor' }
+        );
+      } else if (metadata?.command === 'refactor') {
+        followups.push(
+          { prompt: 'Apply these refactoring suggestions', label: 'Apply Changes' },
+          { prompt: 'Review the refactored code', label: 'Review', command: 'review' }
+        );
+      } else {
+        // Default follow-ups
+        followups.push(
+          { prompt: 'Review my code', label: 'Code Review', command: 'review' },
+          { prompt: 'Explain this code', label: 'Explain', command: 'explain' }
+        );
+      }
+
+      return followups;
+    },
+  };
+
+  context.subscriptions.push(participant);
+  return participant;
+}
+
+/**
+ * Register extension commands
+ */
+function registerCommands(context: vscode.ExtensionContext): void {
+  // Select provider command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.selectProvider', async () => {
+      await providerManager.showProviderPicker();
+    })
+  );
+
+  // Toggle provider command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.toggleProvider', async () => {
+      await providerManager.toggleProvider();
+    })
+  );
+
+  // Show status command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.showStatus', async () => {
+      const status = await providerManager.getProvidersStatus();
+      const currentProvider = providerManager.getCurrentProvider();
+
+      const message = [
+        `**XORNG Status**`,
+        ``,
+        `Current Provider: ${currentProvider.displayName}`,
+        ``,
+        `**Available Providers:**`,
+        ...status.map(s => `- ${s.name}: ${s.available ? '✅ Available' : '❌ Not available'}${s.current ? ' (current)' : ''}`),
+      ].join('\n');
+
+      const selection = await vscode.window.showInformationMessage(
+        `XORNG is using ${currentProvider.displayName}`,
+        'Change Provider',
+        'View Details'
+      );
+
+      if (selection === 'Change Provider') {
+        await providerManager.showProviderPicker();
+      } else if (selection === 'View Details') {
+        // Show in output channel
+        const outputChannel = vscode.window.createOutputChannel('XORNG');
+        outputChannel.appendLine(message.replace(/\*\*/g, ''));
+        outputChannel.show();
+      }
+    })
+  );
+
+  // Clear memory command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.clearMemory', async () => {
+      orchestrator.clearHistory();
+      vscode.window.showInformationMessage('XORNG: Conversation memory cleared');
+    })
+  );
+
+  // Start Core command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.startCore', async () => {
+      if (orchestrator.isCoreRunning()) {
+        vscode.window.showInformationMessage('XORNG: Core is already running');
+        return;
+      }
+
+      const corePath = setupManager.getCorePath();
+      if (!corePath) {
+        const setup = await vscode.window.showWarningMessage(
+          'XORNG: Core is not installed. Would you like to run setup?',
+          'Run Setup',
+          'Cancel'
+        );
+        if (setup === 'Run Setup') {
+          vscode.commands.executeCommand('xorng.setup');
+        }
+        return;
+      }
+
+      orchestrator.setCorePath(corePath);
+      const started = await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'XORNG: Starting Core...',
+          cancellable: false,
+        },
+        async () => orchestrator.startCore()
+      );
+
+      if (started) {
+        updateStatusBar();
+      }
+    })
+  );
+
+  // Stop Core command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.stopCore', async () => {
+      if (!orchestrator.isCoreRunning()) {
+        vscode.window.showInformationMessage('XORNG: Core is not running');
+        return;
+      }
+
+      await orchestrator.stopCore();
+      updateStatusBar();
+      vscode.window.showInformationMessage('XORNG: Core stopped');
+    })
+  );
+
+  // Restart Core command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.restartCore', async () => {
+      const localOrchestrator = orchestrator.getLocalOrchestrator();
+      if (!localOrchestrator) {
+        vscode.window.showWarningMessage('XORNG: Core is not initialized');
+        return;
+      }
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'XORNG: Restarting Core...',
+          cancellable: false,
+        },
+        async () => localOrchestrator.restart()
+      );
+
+      updateStatusBar();
+      vscode.window.showInformationMessage('XORNG: Core restarted');
+    })
+  );
+
+  // Setup command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.setup', async () => {
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'XORNG: Setting up components...',
+          cancellable: false,
+        },
+        async (progress) => {
+          progress.report({ message: 'Setting up XORNG...' });
+          await setupManager.runSetup(progress);
+
+          const corePath = setupManager.getCorePath();
+          if (corePath) {
+            orchestrator.setCorePath(corePath);
+            progress.report({ message: 'Starting Core...' });
+            await orchestrator.startCore();
+          }
+        }
+      );
+
+      updateStatusBar();
+      vscode.window.showInformationMessage('XORNG: Setup completed');
+    })
+  );
+
+  // Update command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.update', async () => {
+      const wasRunning = orchestrator.isCoreRunning();
+      
+      if (wasRunning) {
+        await orchestrator.stopCore();
+      }
+
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'XORNG: Updating components...',
+          cancellable: false,
+        },
+        async (progress) => {
+          progress.report({ message: 'Pulling latest changes...' });
+          await setupManager.runUpdate(progress);
+        }
+      );
+
+      if (wasRunning) {
+        await orchestrator.startCore();
+      }
+
+      updateStatusBar();
+      vscode.window.showInformationMessage('XORNG: Update completed');
+    })
+  );
+
+  // Show available agents command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.showAgents', async () => {
+      const agents = orchestrator.getSubAgents();
+      const coreRunning = orchestrator.isCoreRunning();
+
+      if (agents.length === 0) {
+        vscode.window.showInformationMessage('XORNG: No sub-agents available');
+        return;
+      }
+
+      const items = agents.map(agent => ({
+        label: `$(${getAgentIcon(agent.type)}) ${agent.name}`,
+        description: agent.type,
+        detail: `${agent.description}${agent.status ? ` (${agent.status})` : ''}`,
+        agent,
+      }));
+
+      const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: coreRunning ? 'Sub-Agents from XORNG Core' : 'Built-in Sub-Agents (Start Core for more)',
+        title: 'XORNG Sub-Agents',
+      });
+
+      if (selected) {
+        // Show agent details
+        const agent = selected.agent;
+        vscode.window.showInformationMessage(
+          `${agent.name}: ${agent.description}`,
+          'Use in Chat'
+        ).then(selection => {
+          if (selection === 'Use in Chat') {
+            // Open chat with agent-specific command
+            const commandMap: Record<string, string> = {
+              'code-review': 'review',
+              'security': 'security',
+              'documentation': 'explain',
+              'refactoring': 'refactor',
+            };
+            const command = commandMap[agent.id] || '';
+            vscode.commands.executeCommand('workbench.action.chat.open', {
+              query: `@xorng ${command ? `/${command} ` : ''}`,
+            });
+          }
+        });
+      }
+    })
+  );
+
+  // Show Core logs command
+  context.subscriptions.push(
+    vscode.commands.registerCommand('xorng.showCoreLogs', async () => {
+      const localOrchestrator = orchestrator.getLocalOrchestrator();
+      if (!localOrchestrator) {
+        vscode.window.showInformationMessage('XORNG: Core logs not available. Core has not been started.');
+        return;
+      }
+      // The output channel is managed by LocalOrchestrator
+      vscode.commands.executeCommand('workbench.action.output.show', { channel: 'XORNG Core' });
+    })
+  );
+}
+
+/**
+ * Get icon for agent type
+ */
+function getAgentIcon(type: string): string {
+  switch (type) {
+    case 'validator':
+      return 'shield';
+    case 'knowledge':
+      return 'book';
+    case 'task':
+      return 'tools';
+    case 'dynamic':
+      return 'sparkle';
+    default:
+      return 'robot';
+  }
+}
+
+/**
+ * Create status bar item
+ */
+function createStatusBar(context: vscode.ExtensionContext): void {
+  statusBarItem = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100
+  );
+
+  statusBarItem.command = 'xorng.selectProvider';
+  updateStatusBar();
+  statusBarItem.show();
+
+  context.subscriptions.push(statusBarItem);
+}
+
+/**
+ * Update status bar with current provider and Core status
+ */
+function updateStatusBar(): void {
+  const provider = providerManager.getCurrentProvider();
+  const providerType = providerManager.getCurrentProviderType();
+  const coreRunning = orchestrator.isCoreRunning();
+
+  let icon = '$(hubot)';
+  switch (providerType) {
+    case 'copilot':
+      icon = '$(copilot)';
+      break;
+    case 'native':
+      icon = '$(server)';
+      break;
+    case 'claude':
+      icon = '$(sparkle)';
+      break;
+    case 'cursor':
+      icon = '$(symbol-cursor)';
+      break;
+  }
+
+  const coreIndicator = coreRunning ? '$(vm-running)' : '';
+  statusBarItem.text = `${icon} XORNG${coreIndicator ? ` ${coreIndicator}` : ''}`;
+  statusBarItem.tooltip = `XORNG: ${provider.displayName}\n${coreRunning ? '🟢 Core running' : '⚪ Core stopped'}\nClick to change provider`;
+}
+
+/**
+ * Extension deactivation
+ */
+export async function deactivate(): Promise<void> {
+  console.log('XORNG extension deactivating...');
+  
+  // Stop Core gracefully
+  if (orchestrator?.isCoreRunning()) {
+    await orchestrator.stopCore();
+  }
+}
