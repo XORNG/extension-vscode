@@ -381,9 +381,28 @@ export class SetupManager implements vscode.Disposable {
 
   /**
    * Git pull latest changes
+   * Handles unstaged changes by stashing them first
    */
   private async gitPull(repoPath: string): Promise<void> {
-    await execAsync('git pull', { cwd: repoPath });
+    // Check for uncommitted changes
+    const { stdout: statusOutput } = await execAsync('git status --porcelain', { cwd: repoPath });
+    const hasChanges = statusOutput.trim().length > 0;
+
+    if (hasChanges) {
+      // Stash changes before pulling
+      await execAsync('git stash --include-untracked', { cwd: repoPath });
+      try {
+        await execAsync('git pull --no-rebase', { cwd: repoPath });
+      } finally {
+        // Restore stashed changes
+        await execAsync('git stash pop', { cwd: repoPath }).catch(() => {
+          // Stash pop might fail if there are conflicts, that's ok
+          this.log('Note: Stashed changes could not be automatically restored. Run "git stash pop" manually.');
+        });
+      }
+    } else {
+      await execAsync('git pull --no-rebase', { cwd: repoPath });
+    }
   }
 
   /**
