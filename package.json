@@ -12,6 +12,7 @@
   "engines": {
     "vscode": "^1.95.0"
   },
+  "extensionKind": ["workspace"],
   "categories": [
     "AI",
     "Programming Languages",

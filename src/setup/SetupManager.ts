@@ -43,6 +43,28 @@ const REPOS: RepoConfig[] = [
     type: 'core',
     required: true,
   },
+  // Templates must be installed before packages that depend on them
+  {
+    name: 'template-base',
+    url: 'https://github.com/XORNG/template-base.git',
+    branch: 'main',
+    type: 'template',
+    required: true,
+  },
+  {
+    name: 'template-validator',
+    url: 'https://github.com/XORNG/template-validator.git',
+    branch: 'main',
+    type: 'template',
+    required: true,
+  },
+  {
+    name: 'template-knowledge',
+    url: 'https://github.com/XORNG/template-knowledge.git',
+    branch: 'main',
+    type: 'template',
+    required: true,
+  },
   {
     name: 'validator-code-review',
     url: 'https://github.com/XORNG/validator-code-review.git',
@@ -422,7 +444,9 @@ export class SetupManager implements vscode.Disposable {
    * Run npm install
    */
   private async npmInstall(repoPath: string): Promise<void> {
-    await execAsync('npm install --production', { cwd: repoPath });
+    // Install all dependencies including devDependencies
+    // Required for TypeScript compilation during build step
+    await execAsync('npm install', { cwd: repoPath });
   }
 
   /**
