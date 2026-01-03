@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { ProviderManager } from './core/ProviderManager.js';
 import { XORNGOrchestrator } from './core/XORNGOrchestrator.js';
 import { SetupManager } from './setup/SetupManager.js';
+import { WorkspaceContextManager } from './workspace/WorkspaceContextManager.js';
+import { registerWorkspaceTools } from './tools/workspaceTools.js';
 
 /**
  * XORNG VS Code Extension
@@ -12,11 +14,14 @@ import { SetupManager } from './setup/SetupManager.js';
  * - Sub-agent orchestration for specialized tasks
  * - Memory and context management
  * - Auto-setup and updates of XORNG components
+ * - **Workspace context access (codebase navigation, file reading, symbol search)**
+ * - **Language Model Tools for AI-assisted codebase exploration**
  */
 
 let providerManager: ProviderManager;
 let orchestrator: XORNGOrchestrator;
 let setupManager: SetupManager;
+let workspaceContextManager: WorkspaceContextManager;
 let statusBarItem: vscode.StatusBarItem;
 
 /**
@@ -24,6 +29,14 @@ let statusBarItem: vscode.StatusBarItem;
  */
 export async function activate(context: vscode.ExtensionContext) {
   console.log('XORNG extension is activating...');
+
+  // Initialize workspace context manager for codebase access
+  workspaceContextManager = new WorkspaceContextManager();
+  context.subscriptions.push(workspaceContextManager);
+
+  // Register Language Model Tools for workspace access
+  // These tools enable AI models to read files, search code, and navigate the codebase
+  registerWorkspaceTools(context, workspaceContextManager);
 
   // Initialize setup manager with extension context
   setupManager = new SetupManager(context);
@@ -33,8 +46,8 @@ export async function activate(context: vscode.ExtensionContext) {
   providerManager = new ProviderManager();
   context.subscriptions.push(providerManager);
 
-  // Initialize orchestrator (without Core path initially)
-  orchestrator = new XORNGOrchestrator(providerManager);
+  // Initialize orchestrator with workspace context
+  orchestrator = new XORNGOrchestrator(providerManager, undefined, workspaceContextManager);
   context.subscriptions.push(orchestrator);
 
   // Create chat participant

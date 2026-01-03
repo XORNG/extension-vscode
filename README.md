@@ -1,8 +1,33 @@
 # XORNG VS Code Extension
 
-AI orchestration framework for enhanced coding assistance with GitHub Copilot, Claude, Cursor, and other AI providers.
+AI orchestration framework for enhanced coding assistance with GitHub Copilot, Claude, Cursor, and other AI providers. **Now with full codebase access!**
 
 ## Features
+
+### 🗂️ Full Codebase Access
+
+XORNG can now access your entire codebase, similar to GitHub Copilot. This enables:
+
+- **Reading files** - Access any file in your workspace
+- **Searching code** - Find text patterns across all files
+- **Symbol navigation** - Find functions, classes, and variables
+- **File tree exploration** - Understand project structure
+- **Reference resolution** - Process files and selections you attach to chat
+
+#### Language Model Tools
+
+XORNG registers the following tools that AI models can use to explore your codebase:
+
+| Tool | Description |
+|------|-------------|
+| `#readFile` | Read contents of any file |
+| `#findFiles` | Find files matching glob patterns |
+| `#searchWorkspace` | Search text in workspace files |
+| `#getSymbols` | Get code symbols (functions, classes, etc.) |
+| `#fileTree` | Get workspace file structure |
+| `#getFileLines` | Read specific line ranges |
+| `#openFiles` | Get currently open/visible files |
+| `#currentEditor` | Get active editor context and selection |
 
 ### 🤖 Multi-Provider Support
 
@@ -26,6 +51,8 @@ Use `@xorng` in VS Code's chat to access intelligent AI assistance:
 @xorng /refactor Improve this code structure
 @xorng /config Help me configure XORNG
 ```
+
+**Attach files and selections:** You can attach files to your chat using `#file:path/to/file.ts` or by selecting code and including it. XORNG will automatically include the content in the context.
 
 ### 🔧 Slash Commands
 

@@ -298,6 +298,45 @@ export class LocalOrchestrator implements vscode.Disposable {
   }
 
   /**
+   * Register a sub-agent with Core
+   */
+  async registerAgent(config: {
+    id: string;
+    name: string;
+    type: 'validator' | 'knowledge' | 'task' | 'dynamic';
+    description: string;
+    capabilities: string[];
+    connectionType?: 'stdio' | 'http' | 'virtual';
+    command?: string;
+    args?: string[];
+    endpoint?: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<void> {
+    const response = await this.sendRequest<IPCResponse>(
+      'agents:register',
+      config
+    );
+    
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Failed to register agent');
+    }
+  }
+
+  /**
+   * Unregister a sub-agent from Core
+   */
+  async unregisterAgent(agentId: string): Promise<void> {
+    const response = await this.sendRequest<IPCResponse>(
+      'agents:unregister',
+      { id: agentId }
+    );
+    
+    if (!response.success) {
+      throw new Error(response.error?.message || 'Failed to unregister agent');
+    }
+  }
+
+  /**
    * Process a request through Core
    */
   async process(
@@ -336,6 +375,12 @@ export class LocalOrchestrator implements vscode.Disposable {
     
     if (!response.success) {
       throw new Error(response.error?.message || 'Processing failed');
+    }
+    
+    // Since Core currently sends full response (not streaming chunks),
+    // send the content as the final chunk here
+    if (response.payload?.content) {
+      onChunk(response.payload.content, true);
     }
     
     return response.payload;
@@ -428,31 +473,63 @@ export class LocalOrchestrator implements vscode.Disposable {
       
       // Get preferred model family from config
       const config = vscode.workspace.getConfiguration('xorng');
-      const preferredFamily = config.get<string>('copilot.modelFamily') || 'gpt-4.1';
+      const preferredFamily = config.get<string>('copilot.modelFamily');
 
-      // Determine model family to use
-      // If options.model is provided but is a generic default (gpt-4/gpt-4o), override with preferred family
-      let family = options?.model || preferredFamily;
-      if (family === 'gpt-4' || family === 'gpt-4o') {
-        family = preferredFamily;
+      // First, try to get models from Copilot vendor
+      // If a specific family is requested, try that first
+      let models: vscode.LanguageModelChat[] = [];
+      
+      if (preferredFamily) {
+        // Try preferred family first
+        models = await vscode.lm.selectChatModels({
+          vendor: 'copilot',
+          family: preferredFamily,
+        });
+      }
+      
+      // If no models found with preferred family, try common families
+      if (models.length === 0) {
+        const familiesToTry = ['gpt-4o', 'gpt-4', 'gpt-4-turbo', 'gpt-3.5-turbo', 'claude-3.5-sonnet'];
+        for (const family of familiesToTry) {
+          models = await vscode.lm.selectChatModels({
+            vendor: 'copilot',
+            family,
+          });
+          if (models.length > 0) {
+            break;
+          }
+        }
+      }
+      
+      // If still no models, try without family filter (get any copilot model)
+      if (models.length === 0) {
+        models = await vscode.lm.selectChatModels({
+          vendor: 'copilot',
+        });
+      }
+      
+      // Last resort: try all available models
+      if (models.length === 0) {
+        models = await vscode.lm.selectChatModels();
       }
 
-      // Get a model from VS Code
-      const models = await vscode.lm.selectChatModels({
-        vendor: 'copilot',
-        family,
-      });
-
       if (models.length === 0) {
+        // Log available info for debugging
+        const allModels = await vscode.lm.selectChatModels();
+        const modelInfo = allModels.map(m => `${m.vendor}/${m.family}/${m.id}`).join(', ');
+        this.log(`No Copilot models available. All models: ${modelInfo || 'none'}`);
+        
         this.sendMessage(createIPCResponse<LLMResponseMessage>(
           'llm:response',
           request.id,
           false,
           undefined,
-          { code: 'NO_MODEL', message: 'No language model available' }
+          { code: 'NO_MODEL', message: `No language model available. Available: ${modelInfo || 'none'}` }
         ));
         return;
       }
+      
+      this.log(`Using model: ${models[0].vendor}/${models[0].family}/${models[0].id}`);
 
       const model = models[0];
       

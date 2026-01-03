@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-01-03
+
+### Added - Full Codebase Access
+
+- **WorkspaceContextManager** - New service for comprehensive workspace access
+- **Language Model Tools** - 8 tools for AI models to explore the codebase:
+  - `xorng_readFile` - Read file contents from workspace
+  - `xorng_findFiles` - Find files matching glob patterns
+  - `xorng_searchWorkspace` - Search text/patterns in workspace
+  - `xorng_getSymbols` - Get code symbols from files or workspace
+  - `xorng_getFileTree` - Get workspace file/folder structure
+  - `xorng_getFileContent` - Read specific line ranges from files
+  - `xorng_getOpenFiles` - Get currently open/visible files
+  - `xorng_getCurrentEditor` - Get active editor context and selection
+- **Chat Reference Resolution** - Process files and selections attached to chat messages
+- **Enhanced System Prompts** - Updated prompts to inform AI about codebase access capabilities
+
+### Changed
+
+- **XORNGOrchestrator** now accepts WorkspaceContextManager for codebase access
+- System prompts now include information about available workspace tools
+- Message building includes resolved references from chat requests
+
+### Technical Details
+
+- New `workspace/` module with WorkspaceContextManager
+- New `tools/` module with Language Model Tool implementations
+- `languageModelTools` contribution point in package.json
+- Type definitions for workspace context in types/index.ts
+
+---
+
 ## [0.1.0] - 2026-01-03
 
 ### Added

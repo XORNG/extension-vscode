@@ -1,8 +1,8 @@
 {
   "name": "xorng-vscode",
   "displayName": "XORNG - AI Orchestration Framework",
-  "description": "Intelligent AI orchestration for enhanced coding assistance with GitHub Copilot and other AI providers",
-  "version": "0.1.0",
+  "description": "Intelligent AI orchestration for enhanced coding assistance with full codebase access, GitHub Copilot and other AI providers",
+  "version": "0.2.0",
   "publisher": "xorng",
   "icon": "resources/xorng-icon.png",
   "repository": {
@@ -34,12 +34,208 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "languageModelTools": [
+      {
+        "name": "xorng_readFile",
+        "tags": ["xorng", "workspace", "files"],
+        "toolReferenceName": "readFile",
+        "displayName": "Read File",
+        "modelDescription": "Read the contents of a file from the workspace. Use this to get the full content of source files, configuration files, or documentation. Provide the file path relative to the workspace root or an absolute path.",
+        "userDescription": "Read the contents of a file from the workspace",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(file-code)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "The file path to read. Can be relative to workspace root or absolute."
+            },
+            "maxLines": {
+              "type": "number",
+              "description": "Maximum number of lines to read. If omitted, reads entire file."
+            }
+          },
+          "required": ["path"]
+        }
+      },
+      {
+        "name": "xorng_findFiles",
+        "tags": ["xorng", "workspace", "files", "search"],
+        "toolReferenceName": "findFiles",
+        "displayName": "Find Files",
+        "modelDescription": "Search for files in the workspace using glob patterns. Use patterns like '**/*.ts' for all TypeScript files, 'src/**/*.js' for JS files in src, or '**/package.json' for all package.json files. Returns a list of matching file paths.",
+        "userDescription": "Find files matching a glob pattern",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(search)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "description": "Glob pattern to match files. Examples: '**/*.ts', 'src/**/*.js', '**/test/*.spec.ts'"
+            },
+            "exclude": {
+              "type": "string",
+              "description": "Glob pattern for files to exclude. Default: '**/node_modules/**'"
+            },
+            "maxResults": {
+              "type": "number",
+              "description": "Maximum number of results to return. Default: 50"
+            }
+          },
+          "required": ["pattern"]
+        }
+      },
+      {
+        "name": "xorng_searchWorkspace",
+        "tags": ["xorng", "workspace", "search", "grep"],
+        "toolReferenceName": "searchWorkspace",
+        "displayName": "Search Workspace",
+        "modelDescription": "Search for text or code patterns within files in the workspace. Similar to grep or 'Find in Files'. Use this to find function definitions, variable usages, imports, or specific code patterns. Returns matching lines with file locations.",
+        "userDescription": "Search for text patterns across workspace files",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(search)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "The text or pattern to search for"
+            },
+            "include": {
+              "type": "string",
+              "description": "Glob pattern for files to include in search. Example: '**/*.ts'"
+            },
+            "exclude": {
+              "type": "string",
+              "description": "Glob pattern for files to exclude. Default: '**/node_modules/**'"
+            },
+            "maxResults": {
+              "type": "number",
+              "description": "Maximum number of files to search. Default: 20"
+            },
+            "useRegex": {
+              "type": "boolean",
+              "description": "Whether to treat query as a regular expression. Default: false"
+            },
+            "caseSensitive": {
+              "type": "boolean",
+              "description": "Whether search is case-sensitive. Default: false"
+            }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "xorng_getSymbols",
+        "tags": ["xorng", "workspace", "symbols", "code"],
+        "toolReferenceName": "getSymbols",
+        "displayName": "Get Symbols",
+        "modelDescription": "Get code symbols (functions, classes, methods, variables, interfaces) from a file or search for symbols across the workspace. Use with 'path' to get all symbols in a file, or with 'query' to search for specific symbol names across the codebase.",
+        "userDescription": "Get code symbols from a file or search workspace symbols",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(symbol-class)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "File path to get symbols from. If provided, returns all symbols in that file."
+            },
+            "query": {
+              "type": "string",
+              "description": "Symbol name to search for across the workspace. If provided without path, searches all workspace symbols."
+            }
+          }
+        }
+      },
+      {
+        "name": "xorng_getFileTree",
+        "tags": ["xorng", "workspace", "files", "structure"],
+        "toolReferenceName": "fileTree",
+        "displayName": "Get File Tree",
+        "modelDescription": "Get the file and folder structure of the workspace. Useful for understanding project organization, finding where to add new files, or getting an overview of the codebase. Returns a hierarchical tree of files and directories.",
+        "userDescription": "Get the workspace file and folder structure",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(list-tree)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "depth": {
+              "type": "number",
+              "description": "Maximum depth to traverse. Default: 3"
+            },
+            "exclude": {
+              "type": "string",
+              "description": "Glob pattern for paths to exclude from the tree"
+            }
+          }
+        }
+      },
+      {
+        "name": "xorng_getFileContent",
+        "tags": ["xorng", "workspace", "files"],
+        "toolReferenceName": "getFileLines",
+        "displayName": "Get File Lines",
+        "modelDescription": "Read specific line ranges from a file. Use this when you need to see particular sections of a file, like a specific function or class definition. Specify start and end line numbers to get just that portion.",
+        "userDescription": "Read specific line ranges from a file",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(file-code)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "The file path to read from"
+            },
+            "startLine": {
+              "type": "number",
+              "description": "Starting line number (1-based). Default: 1"
+            },
+            "endLine": {
+              "type": "number",
+              "description": "Ending line number (1-based). Default: end of file"
+            }
+          },
+          "required": ["path"]
+        }
+      },
+      {
+        "name": "xorng_getOpenFiles",
+        "tags": ["xorng", "workspace", "files", "editor"],
+        "toolReferenceName": "openFiles",
+        "displayName": "Get Open Files",
+        "modelDescription": "Get information about currently open files, visible editors, and recently accessed files. Use this to understand what the user is working on and provide context-aware assistance.",
+        "userDescription": "Get list of currently open and recently accessed files",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(files)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      },
+      {
+        "name": "xorng_getCurrentEditor",
+        "tags": ["xorng", "workspace", "editor", "selection"],
+        "toolReferenceName": "currentEditor",
+        "displayName": "Get Current Editor",
+        "modelDescription": "Get detailed information about the currently active editor including the file content, any selected text, cursor position, and file metadata. Use this to understand what the user is currently looking at or has selected.",
+        "userDescription": "Get current editor context including selection",
+        "canBeReferencedInPrompt": true,
+        "icon": "$(edit)",
+        "inputSchema": {
+          "type": "object",
+          "properties": {}
+        }
+      }
+    ],
     "chatParticipants": [
       {
         "id": "xorng.orchestrator",
         "name": "xorng",
         "fullName": "XORNG Orchestrator",
-        "description": "AI orchestration with intelligent context management and sub-agent coordination",
+        "description": "AI orchestration with intelligent context management, codebase access, and sub-agent coordination",
         "isSticky": true,
         "commands": [
           {

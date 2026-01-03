@@ -146,6 +146,45 @@ export interface SubAgentListResponseMessage extends IPCResponse {
   };
 }
 
+export interface SubAgentRegisterRequestMessage extends IPCRequest {
+  type: 'agents:register';
+  payload: {
+    id: string;
+    name: string;
+    type: 'validator' | 'knowledge' | 'task' | 'dynamic';
+    description: string;
+    capabilities: string[];
+    connectionType?: 'stdio' | 'http' | 'virtual';
+    command?: string;
+    args?: string[];
+    endpoint?: string;
+    metadata?: Record<string, unknown>;
+  };
+}
+
+export interface SubAgentRegisterResponseMessage extends IPCResponse {
+  type: 'agents:register:response';
+  payload: {
+    agentId: string;
+    status: 'registered' | 'failed';
+  };
+}
+
+export interface SubAgentUnregisterRequestMessage extends IPCRequest {
+  type: 'agents:unregister';
+  payload: {
+    id: string;
+  };
+}
+
+export interface SubAgentUnregisterResponseMessage extends IPCResponse {
+  type: 'agents:unregister:response';
+  payload: {
+    agentId: string;
+    status: 'unregistered' | 'failed';
+  };
+}
+
 // ============================================================================
 // Process Request Messages (Main orchestration)
 // ============================================================================

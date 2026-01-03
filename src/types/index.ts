@@ -81,7 +81,75 @@ export interface XORNGContext {
   selectedCode?: string;
   recentFiles?: vscode.Uri[];
   conversationHistory?: Message[];
+  resolvedReferences?: ResolvedChatReference[];
   metadata?: Record<string, unknown>;
+}
+
+/**
+ * Resolved chat reference (file, selection, or URI attached by user)
+ */
+export interface ResolvedChatReference {
+  id: string;
+  type: 'file' | 'selection' | 'uri';
+  uri?: vscode.Uri;
+  range?: vscode.Range;
+  content?: string;
+  description?: string;
+}
+
+/**
+ * File content with metadata
+ */
+export interface FileContentInfo {
+  uri: vscode.Uri;
+  path: string;
+  relativePath: string;
+  content: string;
+  languageId: string;
+  lineCount: number;
+}
+
+/**
+ * Workspace search result
+ */
+export interface WorkspaceSearchMatch {
+  uri: vscode.Uri;
+  path: string;
+  relativePath: string;
+  matches: Array<{
+    line: number;
+    lineContent: string;
+    matchStart: number;
+    matchEnd: number;
+  }>;
+}
+
+/**
+ * Code symbol information
+ */
+export interface CodeSymbolInfo {
+  name: string;
+  kind: vscode.SymbolKind;
+  kindName: string;
+  containerName?: string;
+  location: {
+    uri: string;
+    range: {
+      start: { line: number; character: number };
+      end: { line: number; character: number };
+    };
+  };
+}
+
+/**
+ * File tree node for workspace structure
+ */
+export interface FileTreeNodeInfo {
+  name: string;
+  path: string;
+  relativePath: string;
+  type: 'file' | 'directory';
+  children?: FileTreeNodeInfo[];
 }
 
 /**
