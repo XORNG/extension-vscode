@@ -490,6 +490,26 @@
           "type": "boolean",
           "default": true,
           "description": "Automatically start XORNG Core after setup"
+        },
+        "xorng.automation.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "URL of the XORNG Automation Server for feedback and task processing (e.g., https://xorng.yourdomain.com)"
+        },
+        "xorng.automation.feedbackEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable sending feedback to the XORNG Automation Server"
+        },
+        "xorng.automation.telemetryEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable sending telemetry data to the XORNG Automation Server"
+        },
+        "xorng.automation.taskPollingInterval": {
+          "type": "number",
+          "default": 60,
+          "description": "Interval in seconds to poll for pending tasks from the automation server"
         }
       }
     },
