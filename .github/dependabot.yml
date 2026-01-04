@@ -1,0 +1,57 @@
+# Dependabot Configuration for XORNG VS Code Extension
+# Automatically creates PRs to keep dependencies up-to-date
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates
+
+version: 2
+
+updates:
+  # npm dependencies for TypeScript/Node.js
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "security"
+    groups:
+      # Group VS Code extension specific dependencies
+      vscode:
+        patterns:
+          - "@types/vscode"
+          - "vscode-*"
+          - "@vscode/*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group TypeScript-related updates
+      typescript:
+        patterns:
+          - "typescript"
+          - "@types/*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group dev dependencies
+      dev-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci"
